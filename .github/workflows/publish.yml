@@ -34,7 +34,7 @@ jobs:
         run: |
           set -euo pipefail
           tool=tools/wallpaper-format/target/release/envy-wallpaper
-          mkdir -p packages site/thumbnails
+          mkdir -p wallpapers packages site/thumbnails
           shopt -s nullglob
           for folder in wallpapers/*/; do
             folder=${folder%/}
