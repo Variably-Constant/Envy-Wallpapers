@@ -68,6 +68,17 @@ A wallpaper holds data and no code, except a scene's script. The TV runs that in
 and caps its memory. A script's crate may not have dependencies, a build script or a toolchain of its own, so building it
 runs nothing but the compiler, and it builds in a job that never sees the signing key.
 
+## The catalog's key
+
+Every `catalog.json` is signed with this minisign public key, which Envy builds in:
+
+```
+RWSNX6wxMVtn63VcGylBso9QH4KjGg4TwJ9d9bsRhWjhLoeg+4eNcze7
+```
+
+Check a copy of the catalog with `minisign -Vm catalog.json -P <key>`, or with
+`envy-wallpaper verify catalog.json catalog.json.minisig <key>`.
+
 ## Licenses
 
 Each wallpaper names its license in `wallpaper.toml`: `CC0-1.0`, `CC-BY-4.0` or `CC-BY-SA-4.0`. The tools in `tools/` are
