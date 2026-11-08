@@ -1,0 +1,32 @@
+# Build output and what the publish workflow makes.
+target/
+packages/
+site/
+
+# Keys, signatures in the making and credentials never belong here: the catalog's signing key lives only in the
+# catalog-signing environment's secret and in its keeper's credential store.
+*.key
+*.key.*
+*.sec
+*.secret
+*.pem
+*.p12
+*.pfx
+*.der
+*.jks
+*.keystore
+*minisign*.key
+minisign.*
+!*.minisig
+*.pub.tmp
+id_rsa*
+id_ed25519*
+.env
+.env.*
+*.env
+secrets/
+credentials*
+.netrc
+.npmrc
+.pypirc
+*.token

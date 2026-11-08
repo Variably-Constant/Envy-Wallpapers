@@ -1,0 +1,110 @@
+name: publish
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "wallpapers/**"
+      - "tools/**"
+      - ".github/workflows/publish.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  # Builds scripts from contributors' source, so it never sees the signing key.
+  packages:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust, with WebAssembly
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Build envy-wallpaper
+        run: cargo build --release --locked --manifest-path tools/wallpaper-format/Cargo.toml
+
+      - name: Release each new version, and gather every package and thumbnail
+        run: |
+          set -euo pipefail
+          tool=tools/wallpaper-format/target/release/envy-wallpaper
+          mkdir -p packages site/thumbnails
+          shopt -s nullglob
+          for folder in wallpapers/*/; do
+            folder=${folder%/}
+            id=$(basename "$folder")
+            "$tool" check "$folder"
+            IFS=$'\t' read -r tag file thumbnail < <("$tool" name "$folder")
+            if gh release view "$tag" > /dev/null 2>&1; then
+              gh release download "$tag" --pattern "$file" --dir packages
+            else
+              script=()
+              toml=$(find "$folder" -name Cargo.toml -print -quit)
+              if [ -n "$toml" ]; then
+                cargo build --release --target wasm32-unknown-unknown --manifest-path "$toml" --target-dir target/scripts
+                lib=$(cargo metadata --no-deps --format-version 1 --manifest-path "$toml" | jq -r '.packages[0].targets[] | select(.kind[] == "cdylib") | .name')
+                script=("target/scripts/wasm32-unknown-unknown/release/${lib//-/_}.wasm")
+              fi
+              "$tool" pack "$folder" packages "${script[@]}"
+              gh release create "$tag" "packages/$file" --title "$tag" --notes "The wallpaper $id, packed from $GITHUB_SHA."
+            fi
+            mkdir -p "site/thumbnails/$id/$(dirname "$thumbnail")"
+            cp "$folder/$thumbnail" "site/thumbnails/$id/$thumbnail"
+          done
+          owner=${GITHUB_REPOSITORY_OWNER,,}
+          "$tool" catalog wallpapers packages \
+            "https://github.com/$GITHUB_REPOSITORY/releases/download" \
+            "https://$owner.github.io/${GITHUB_REPOSITORY#*/}/thumbnails" > site/catalog.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: site
+          path: site
+
+  # Signs only the catalog the job above wrote; it runs no contributor's code.
+  sign:
+    needs: packages
+    runs-on: ubuntu-latest
+    environment: catalog-signing
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: site
+          path: site
+
+      - name: Sign the catalog
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -q
+          sudo apt-get install -y -q minisign
+          umask 077
+          printf '%s\n' "$MINISIGN_SECRET_KEY" > "$RUNNER_TEMP/catalog.key"
+          minisign -S -s "$RUNNER_TEMP/catalog.key" -m site/catalog.json -t "Envy-Wallpapers catalog $GITHUB_SHA"
+          rm -f "$RUNNER_TEMP/catalog.key"
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: sign
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

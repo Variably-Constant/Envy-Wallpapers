@@ -1,0 +1,41 @@
+name: check
+
+on:
+  pull_request:
+    paths:
+      - "wallpapers/**"
+      - "tools/**"
+      - ".github/workflows/check.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust, with WebAssembly
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Build and test envy-wallpaper
+        run: |
+          cargo test --release --locked --manifest-path tools/wallpaper-format/Cargo.toml
+          cargo build --release --locked --manifest-path tools/wallpaper-format/Cargo.toml
+
+      - name: Check every wallpaper
+        run: |
+          shopt -s nullglob
+          folders=(wallpapers/*/)
+          if [ ${#folders[@]} -gt 0 ]; then
+            tools/wallpaper-format/target/release/envy-wallpaper check "${folders[@]}"
+          fi
+
+      # Every Cargo.toml under wallpapers/ is the root of a script's crate once the check has passed, and the check keeps
+      # out dependencies, build scripts, proc macros and toolchain files, so this runs nothing but the compiler.
+      - name: Build every script from its source
+        run: |
+          find wallpapers -mindepth 3 -name Cargo.toml -print0 | while IFS= read -r -d '' toml; do
+            cargo build --release --target wasm32-unknown-unknown --manifest-path "$toml" --target-dir target/scripts
+          done
